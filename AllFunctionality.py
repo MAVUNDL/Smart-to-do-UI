@@ -1,42 +1,160 @@
 from flet import *
+from database import insert_task, get_tasks, delete_task
 
 
 class Main_Frame(UserControl):
-    list_of_categories = ['Business', 'Entertainment', 'Science', 'Technology']
+    list_of_categories = ['Welcome']
 
     def __init__(self, page, animation_container):
         super().__init__()
-        self.Task_listing = None
+        self.Task_listing: Stack = None
         self.information_icons = None
-        # add icons
-        self.icons_creation()
-        # call the initialize function
-        self.initialize_task_funct()
-        # call to add tasks columns
-        self.insert_tasks()
-        # animation container
         self.animation_container = animation_container
-        # will be set by the main function
         self.page = page
 
-    # this function will handle the initialization of the button effect
+        # Track the number of tasks per category
+        self.tasks_per_category = {category: 0 for category in self.list_of_categories}
+
+        # Initialize task columns
+        self.task_columns = Column(
+            height=300,
+            scroll='auto',
+        )
+
+        # Initialize controls
+        self.icons_creation()
+        self.initialize_task_funct()
+        self.insert_tasks("Welcome")
+        self.load_tasks_from_db()  # Load tasks from the database
+
     def initialize_task_funct(self):
+        # Initialize Task_listing with task_columns and FloatingActionButton
         self.Task_listing = Stack(
             controls=[
-                # columns task
                 self.task_columns,
-                # add button
                 FloatingActionButton(
                     icon=icons.ADD,
                     on_click=lambda e: self.page.go('/create_task'),
                     bottom=2,
                     right=20,
                 ),
-            ]
+            ],
+            width=400,
+            height=300,
         )
 
-    # animation
+    def update_task_listing(self, task_name: str, category: str = 'Demo'):
+        task_id = insert_task(task_name, category)  # Save new task to the database and get its ID
+
+        task_container = Container(
+            height=50,
+            width=400,
+            bgcolor='#041955',
+            border_radius=15,
+            padding=padding.only(left=10),
+            content=Row(
+                controls=[
+                    Checkbox(
+                        active_color='#eb06ff',
+                        overlay_color='#fffff',
+                        label=task_name,
+                        adaptive=True,
+                        autofocus=True,
+                        shape=RoundedRectangleBorder(radius=24),
+                    ),
+                    IconButton(
+                        icon=icons.DELETE,
+                        on_click=lambda e, task_id=task_id: self.delete_task(task_id, task_container, category)
+                    ),
+                ],
+                alignment='spaceBetween'
+            )
+        )
+
+        self.task_columns.controls.append(task_container)
+
+        # Update the category list and task count
+        if category not in self.tasks_per_category:
+            self.add_category(category)
+        self.tasks_per_category[category] += 1
+
+        self.update_task_columns()
+        self.update_category_cards()  # Update category cards after adding a task
+
+    def delete_task(self, task_id, task_container, category):
+        # Delete task from the database
+        delete_task(task_id)
+
+        # Check if the task_container exists in self.task_columns.controls before removing
+        if task_container in self.task_columns.controls:
+            self.task_columns.controls.remove(task_container)
+        else:
+            print(f"Task container not found in controls: {task_container}")
+
+        # Update the task count for the category
+        if category in self.tasks_per_category:
+            self.tasks_per_category[category] -= 1
+            if self.tasks_per_category[category] == 0:
+                del self.tasks_per_category[category]
+                self.list_of_categories.remove(category)
+
+        self.update_task_columns()
+        self.update_category_cards()  # Update category cards after deleting a task
+
+    def update_task_columns(self):
+        try:
+            # Ensure controls are updated properly
+            self.task_columns.update()
+            self.Task_listing.update()
+            self.page.update()
+        except AssertionError as e:
+            pass
+
+    def update_category_cards(self):
+        if not self.page:
+            return
+
+        self.category_card.controls.clear()
+        for i, category in enumerate(self.list_of_categories):
+            task_count = self.tasks_per_category.get(category, 0)
+            self.category_card.controls.append(
+                Container(
+                    bgcolor='#041955',
+                    border_radius=20,
+                    width=170,
+                    height=110,
+                    padding=15,
+                    content=Column(
+                        controls=[
+                            Text(f'Task {task_count:02d}'),
+                            Text(category),
+                            Container(
+                                width=160,
+                                height=5,
+                                bgcolor='white12',
+                                border_radius=20,
+                                padding=padding.only(right=i * 30),
+                                content=Container(
+                                    bgcolor='#eb06ff'
+                                )
+                            )
+                        ]
+                    )
+                )
+            )
+        try:
+            self.task_categories.update()
+        except AssertionError as e:
+            pass
+
+    def load_tasks_from_db(self):
+        # Load tasks from the database and update the UI
+        tasks = get_tasks()
+        for task_id, name, category in tasks:
+            self.update_task_listing(name, category)
+
     def animate_(self):
+        # Animation logic for animation_container
         if self.animation_container:
             if self.animation_container.width == 400:
                 self.animation_container.animate_position = animation.Animation(1000, AnimationCurve.DECELERATE)
@@ -50,8 +168,8 @@ class Main_Frame(UserControl):
                 self.animation_container.right = None
             self.page.update()
 
-    # header information -> Icons set up
     def icons_creation(self):
+        # Create information_icons
         self.information_icons = Container(
             content=Column(
                 controls=[
@@ -60,18 +178,12 @@ class Main_Frame(UserControl):
                         controls=[
                             Container(
                                 on_click=lambda e: self.animate_(),
-                                content=Icon(
-                                    icons.MENU,
-                                ),
+                                content=Icon(icons.MENU),
                             ),
                             Row(
                                 controls=[
-                                    Icon(
-                                        icons.SEARCH
-                                    ),
-                                    Icon(
-                                        icons.NOTIFICATIONS
-                                    )
+                                    Icon(icons.SEARCH),
+                                    Icon(icons.NOTIFICATIONS)
                                 ]
                             )
                         ]
@@ -80,68 +192,45 @@ class Main_Frame(UserControl):
             )
         )
 
-    # Labels
     Header_text = Container(
         content=Column(
             controls=[
                 Text(
-                    value='Welcome back!'
+                    value='Welcome back!',
+                    color='white',
+                    font_family='poppins',
+                    size=32, weight='bold'
                 )
             ]
         )
     )
+
     Footer_text = Container(
         content=Column(
             controls=[
                 Text(
-                    value='CATEGORIES'
+                    value='CATEGORIES',
+                    weight=FontWeight.W_300, color='white', font_family='poppins',
+                    size=22
                 )
             ]
         )
     )
 
     text_label = Text(
-        value="Today's tasks"
+        value="Today's tasks",
+        weight=FontWeight.W_300, color='white', font_family='poppins'
     )
 
-    # adding more categories
     def add_category(self, category_type) -> None:
-        self.list_of_categories.append(category_type)
+        if category_type not in self.list_of_categories:
+            self.list_of_categories.append(category_type)
+            self.tasks_per_category[category_type] = 0
 
-    # this will the card for the categories
     category_card = Row(
         scroll='auto',
     )
 
-    # this will add each category type to a card
-    for i, category in enumerate(list_of_categories):
-        category_card.controls.append(
-            Container(
-                bgcolor='#041955',
-                border_radius=20,
-                width=170,
-                height=110,
-                padding=15,
-                content=Column(
-                    controls=[
-                        Text('Task 01'),
-                        Text(category),
-                        Container(
-                            width=160,
-                            height=5,
-                            bgcolor='white12',
-                            border_radius=20,
-                            padding=padding.only(right=i * 30),
-                            content=Container(
-                                bgcolor='#eb06ff'
-                            )
-                        )
-                    ]
-                )
-            )
-        )
-
-    # Creating a container to store the cards
     task_categories = Container(
         padding=padding.only(
             top=10,
@@ -150,46 +239,32 @@ class Main_Frame(UserControl):
         content=category_card
     )
 
-    # listing of tasks
-    task_columns = Column(
-        height=300,
-        scroll='auto',
-    )
-
-    # function to add task columns on page
-    def insert_tasks(self):
-        for i in range(10):
-            self.task_columns.controls.append(
-                Container(
-                    height=50,
-                    width=400,
-                    bgcolor='#041955',
-                    border_radius=15,
-                    padding=padding.only(left=10),
-                    content=Checkbox(
-                        active_color='#eb06ff',
-                        overlay_color='#fffff',
-                        label=' ',
-                        adaptive=True,
-                        autofocus=True,
-                        shape=RoundedRectangleBorder(
-                            radius=24
-                        ),
-                    )
+    def insert_tasks(self, text_input: str):
+        # Insert new task into task_columns
+        self.task_columns.controls.append(
+            Container(
+                height=50,
+                width=400,
+                bgcolor='#041955',
+                border_radius=15,
+                padding=padding.only(left=10),
+                content=Checkbox(
+                    active_color='#eb06ff',
+                    overlay_color='#fffff',
+                    label=text_input,
+                    adaptive=True,
+                    autofocus=True,
+                    shape=RoundedRectangleBorder(radius=24),
                 )
             )
+        )
 
-    # this function handles the routing of the button
     def onclick(self, e):
+        # Handle button click routing
         self.page.go('/create_task')
 
-    # add
-
-    # all contents are added to this function
-    def main_window(self) -> Container:
-        raise NotImplemented
-
     def build(self):
+        # Build animation_container content
         self.animation_container.content = Row(
             controls=[
                 Container(
@@ -205,29 +280,17 @@ class Main_Frame(UserControl):
                     ),
                     content=Column(
                         controls=[
-                            # Header Icons
                             self.information_icons,
-                            # adding space between
-                            Container(
-                                height=20
-                            ),
-                            # text labels
+                            Container(height=20),
                             self.Header_text,
                             self.Footer_text,
-                            # task cards
                             self.task_categories,
-                            # more labels
-                            Container(
-                                height=20,
-                            ),
+                            Container(height=20),
                             self.text_label,
-                            # add button
                             self.Task_listing,
-
                         ]
                     )
-
                 )
-            ],
+            ]
         )
         return self.animation_container
