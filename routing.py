@@ -15,7 +15,7 @@ def function(page) -> dict:
         '/create_task': View(
             "/create_task",
             [
-                Task_section()
+                Task_section(task_submit_callback=page.main_frame.update_task_listing)  # Pass the callback here
             ]
         )
     }
@@ -25,8 +25,7 @@ def function(page) -> dict:
 # creating routing functionality
 def route_change(event):
     event.page.views.clear()
-    main_container = event.page.controls[0]
     event.page.views.append(
-        function(event.page)[event.page.route]
+        function(event.page).get(event.page.route, function(event.page)['/'])  # Use a default route if not found
     )
     event.page.update()
